@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import '../services/ai_service.dart';
+import '../widgets/selection_button.dart';
+import '../models/outfit_model.dart';
+import '../services/saved_outfits_service.dart';
+import 'saved_looks_screen.dart';
 
 class OutfitScreen extends StatefulWidget {
   const OutfitScreen({super.key});
@@ -12,6 +16,8 @@ class _OutfitScreenState extends State<OutfitScreen> {
   String selectedWeather = "";
   String selectedOccasion = "";
   String selectedGender = "";
+  bool isReloadingOutfit1 = false;
+  bool isReloadingOutfit2 = false;
 
   Map<String, dynamic>? outfitData;
   String image1 = "";
@@ -25,7 +31,9 @@ class _OutfitScreenState extends State<OutfitScreen> {
       return;
     }
 
-    setState(() => isLoading = true);
+    setState(() {
+      isLoading = true;
+    });
 
     try {
       final data = await AIService.getOutfit(
@@ -36,12 +44,12 @@ class _OutfitScreenState extends State<OutfitScreen> {
 
       final results = await Future.wait([
         AIService.generateOutfitImage(
-          data["outfit1"]["outfit"],
+          data["outfit1"]["image_prompt"],
           selectedGender,
           selectedOccasion,
         ),
         AIService.generateOutfitImage(
-          data["outfit2"]["outfit"],
+          data["outfit2"]["image_prompt"],
           selectedGender,
           selectedOccasion,
         ),
@@ -54,43 +62,102 @@ class _OutfitScreenState extends State<OutfitScreen> {
         isLoading = false;
       });
     } catch (e) {
-      print("Error: $e");
       setState(() {
         outfitData = null;
         image1 = "";
         image2 = "";
         isLoading = false;
       });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to generate outfit: $e')));
     }
   }
 
-  Widget buildButton(String label, VoidCallback onTap, bool isSelected) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        margin: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.black : Colors.grey.shade200,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.15),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ]
-              : [],
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.black,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
+  Future<void> regenerateSingleOutfit(String outfitKey) async {
+    if (selectedWeather.isEmpty ||
+        selectedOccasion.isEmpty ||
+        selectedGender.isEmpty ||
+        outfitData == null) {
+      return;
+    }
+
+    setState(() {
+      if (outfitKey == "outfit1") {
+        isReloadingOutfit1 = true;
+      } else {
+        isReloadingOutfit2 = true;
+      }
+    });
+
+    try {
+      final newData = await AIService.getOutfit(
+        weather: selectedWeather,
+        occasion: selectedOccasion,
+        gender: selectedGender,
+      );
+
+      final Map<String, dynamic> newOutfit = newData[outfitKey];
+
+      final String newImage = await AIService.generateOutfitImage(
+        newOutfit["image_prompt"],
+        selectedGender,
+        selectedOccasion,
+      );
+
+      setState(() {
+        outfitData![outfitKey] = newOutfit;
+
+        if (outfitKey == "outfit1") {
+          image1 = newImage;
+          isReloadingOutfit1 = false;
+        } else {
+          image2 = newImage;
+          isReloadingOutfit2 = false;
+        }
+      });
+    } catch (e) {
+      setState(() {
+        if (outfitKey == "outfit1") {
+          isReloadingOutfit1 = false;
+        } else {
+          isReloadingOutfit2 = false;
+        }
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Failed to reload $outfitKey: $e")),
+      );
+    }
+  }
+
+  Future<void> saveLook({
+    required String title,
+    required String outfit,
+    required String colors,
+    required String tip,
+    required String imageUrl,
+  }) async {
+    final savedOutfit = OutfitModel(
+      title: title,
+      outfit: outfit,
+      colors: colors,
+      tip: tip,
+      imageUrl: imageUrl,
+      weather: selectedWeather,
+      occasion: selectedOccasion,
+      gender: selectedGender,
+    );
+
+    await SavedOutfitsService.saveOutfit(savedOutfit);
+
+    setState(() {});
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$title saved successfully'),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -99,7 +166,17 @@ class _OutfitScreenState extends State<OutfitScreen> {
     String title,
     String imageUrl,
     Map<String, dynamic> outfit,
+    String outfitKey,
+    bool isReloading,
   ) {
+    final String outfitTitle = outfit["title"] ?? "";
+    final String outfitDescription = outfit["outfit"] ?? "";
+    final String colors = outfit["colors"] ?? "";
+    final String tip = outfit["tips"] ?? "";
+    final String officeFit = outfit["office_fit"] ?? "";
+    final String palette = outfit["palette"] ?? "";
+    final int officeScore = outfit["office_score"] ?? 0;
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 12),
       decoration: BoxDecoration(
@@ -120,44 +197,54 @@ class _OutfitScreenState extends State<OutfitScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            child: GestureDetector(
-              onTap: () {
-                showDialog(
-                  context: context,
-                  builder: (_) => Dialog(
-                    backgroundColor: Colors.black,
-                    insetPadding: EdgeInsets.zero,
-                    child: InteractiveViewer(
-                      child: Image.network(imageUrl, fit: BoxFit.contain),
+          if (imageUrl.isNotEmpty)
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
+              child: GestureDetector(
+                onTap: () {
+                  showDialog(
+                    context: context,
+                    builder: (_) => Dialog(
+                      backgroundColor: Colors.black,
+                      insetPadding: EdgeInsets.zero,
+                      child: InteractiveViewer(
+                        child: Image.network(
+                          imageUrl,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => Image.network(
+                            "https://picsum.photos/seed/fashion/600/400",
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                );
-              },
-              child: Image.network(
-                imageUrl,
-                height: 280,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Container(
-                    height: 280,
-                    width: double.infinity,
-                    color: Colors.grey.shade200,
-                    child: const Center(child: CircularProgressIndicator()),
                   );
                 },
-                errorBuilder: (_, __, ___) => Image.network(
-                  "https://picsum.photos/seed/fashion/600/400",
+                child: Image.network(
+                  imageUrl,
                   height: 280,
                   width: double.infinity,
                   fit: BoxFit.cover,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Container(
+                      height: 280,
+                      width: double.infinity,
+                      color: Colors.grey.shade200,
+                      child: const Center(child: CircularProgressIndicator()),
+                    );
+                  },
+                  errorBuilder: (_, __, ___) => Image.network(
+                    "https://picsum.photos/seed/fashion/600/400",
+                    height: 280,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
                 ),
               ),
             ),
-          ),
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -178,7 +265,7 @@ class _OutfitScreenState extends State<OutfitScreen> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  outfit["title"] ?? "",
+                  outfitTitle,
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -187,18 +274,63 @@ class _OutfitScreenState extends State<OutfitScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  "Outfit: ${outfit["outfit"] ?? ""}",
+                  "Outfit: $outfitDescription",
                   style: const TextStyle(height: 1.5),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  "Colors: ${outfit["colors"] ?? ""}",
-                  style: const TextStyle(height: 1.5),
-                ),
+                Text("Colors: $colors", style: const TextStyle(height: 1.5)),
                 const SizedBox(height: 8),
-                Text(
-                  "Tip: ${outfit["tips"] ?? ""}",
-                  style: const TextStyle(height: 1.5),
+                Text("Palette: $palette", style: const TextStyle(height: 1.5)),
+                const SizedBox(height: 8),
+                Text("Tip: $tip", style: const TextStyle(height: 1.5)),
+
+                if (selectedOccasion == "Office") ...[
+                  const SizedBox(height: 8),
+                  Text("Office Fit: $officeFit"),
+                  const SizedBox(height: 8),
+                  Text("Office Score: $officeScore/10"),
+                ],
+
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          saveLook(
+                            title: outfitTitle.isNotEmpty ? outfitTitle : title,
+                            outfit: outfitDescription,
+                            colors: colors,
+                            tip: tip,
+                            imageUrl: imageUrl,
+                          );
+                        },
+                        icon: const Icon(Icons.favorite_border),
+                        label: const Text("Save Look"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.deepPurple,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    TextButton(
+                      onPressed: isReloading
+                          ? null
+                          : () => regenerateSingleOutfit(outfitKey),
+                      child: isReloading
+                          ? const SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text("Try Another 🔄"),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -210,6 +342,8 @@ class _OutfitScreenState extends State<OutfitScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final int savedCount = SavedOutfitsService.savedOutfits.length;
+
     return Scaffold(
       backgroundColor: const Color(0xFFFDF7FB),
       appBar: AppBar(
@@ -219,6 +353,33 @@ class _OutfitScreenState extends State<OutfitScreen> {
           "AI Outfit Recommender",
           style: TextStyle(color: Colors.black87),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.favorite_border, color: Colors.black87),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const SavedLooksScreen(),
+                ),
+              ).then((_) {
+                setState(() {});
+              });
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Center(
+              child: Text(
+                "Saved: $savedCount",
+                style: const TextStyle(
+                  color: Colors.black87,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(20),
@@ -231,20 +392,20 @@ class _OutfitScreenState extends State<OutfitScreen> {
             ),
             Wrap(
               children: [
-                buildButton(
-                  "Sunny ☀️",
-                  () => setState(() => selectedWeather = "Sunny"),
-                  selectedWeather == "Sunny",
+                SelectionButton(
+                  label: "Sunny ☀️",
+                  isSelected: selectedWeather == "Sunny",
+                  onTap: () => setState(() => selectedWeather = "Sunny"),
                 ),
-                buildButton(
-                  "Rainy 🌧️",
-                  () => setState(() => selectedWeather = "Rainy"),
-                  selectedWeather == "Rainy",
+                SelectionButton(
+                  label: "Rainy 🌧️",
+                  isSelected: selectedWeather == "Rainy",
+                  onTap: () => setState(() => selectedWeather = "Rainy"),
                 ),
-                buildButton(
-                  "Cold ❄️",
-                  () => setState(() => selectedWeather = "Cold"),
-                  selectedWeather == "Cold",
+                SelectionButton(
+                  label: "Cold ❄️",
+                  isSelected: selectedWeather == "Cold",
+                  onTap: () => setState(() => selectedWeather = "Cold"),
                 ),
               ],
             ),
@@ -255,20 +416,20 @@ class _OutfitScreenState extends State<OutfitScreen> {
             ),
             Wrap(
               children: [
-                buildButton(
-                  "Party 🎉",
-                  () => setState(() => selectedOccasion = "Party"),
-                  selectedOccasion == "Party",
+                SelectionButton(
+                  label: "Party 🎉",
+                  isSelected: selectedOccasion == "Party",
+                  onTap: () => setState(() => selectedOccasion = "Party"),
                 ),
-                buildButton(
-                  "Office 💼",
-                  () => setState(() => selectedOccasion = "Office"),
-                  selectedOccasion == "Office",
+                SelectionButton(
+                  label: "Office 💼",
+                  isSelected: selectedOccasion == "Office",
+                  onTap: () => setState(() => selectedOccasion = "Office"),
                 ),
-                buildButton(
-                  "Gym 🏋️",
-                  () => setState(() => selectedOccasion = "Gym"),
-                  selectedOccasion == "Gym",
+                SelectionButton(
+                  label: "Gym 🏋️",
+                  isSelected: selectedOccasion == "Gym",
+                  onTap: () => setState(() => selectedOccasion = "Gym"),
                 ),
               ],
             ),
@@ -279,15 +440,15 @@ class _OutfitScreenState extends State<OutfitScreen> {
             ),
             Wrap(
               children: [
-                buildButton(
-                  "Female 👗",
-                  () => setState(() => selectedGender = "Female"),
-                  selectedGender == "Female",
+                SelectionButton(
+                  label: "Female 👗",
+                  isSelected: selectedGender == "Female",
+                  onTap: () => setState(() => selectedGender = "Female"),
                 ),
-                buildButton(
-                  "Male 👔",
-                  () => setState(() => selectedGender = "Male"),
-                  selectedGender == "Male",
+                SelectionButton(
+                  label: "Male 👔",
+                  isSelected: selectedGender == "Male",
+                  onTap: () => setState(() => selectedGender = "Male"),
                 ),
               ],
             ),
@@ -305,8 +466,16 @@ class _OutfitScreenState extends State<OutfitScreen> {
                   backgroundColor: Colors.transparent,
                   shadowColor: Colors.transparent,
                   padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
+                  ),
                 ),
-                onPressed: generateOutfit,
+                onPressed:
+                    (selectedWeather.isEmpty ||
+                        selectedOccasion.isEmpty ||
+                        selectedGender.isEmpty)
+                    ? null
+                    : generateOutfit,
                 child: const Text(
                   "Get Outfit ✨",
                   style: TextStyle(fontSize: 16, color: Colors.white),
@@ -324,11 +493,15 @@ class _OutfitScreenState extends State<OutfitScreen> {
                       "Outfit 1 ✨",
                       image1,
                       outfitData!["outfit1"],
+                      "outfit1",
+                      isReloadingOutfit1,
                     ),
                     buildOutfitCard(
                       "Outfit 2 🔥",
                       image2,
                       outfitData!["outfit2"],
+                      "outfit2",
+                      isReloadingOutfit2,
                     ),
                   ],
                 ),
