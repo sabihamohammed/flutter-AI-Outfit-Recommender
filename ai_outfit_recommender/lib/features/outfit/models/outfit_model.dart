@@ -46,4 +46,14 @@ class OutfitModel {
       gender: json["gender"],
     );
   }
+
+  bool isSameLook(OutfitModel other) {
+    return title == other.title &&
+        outfit == other.outfit &&
+        colors == other.colors &&
+        tip == other.tip &&
+        weather == other.weather &&
+        occasion == other.occasion &&
+        gender == other.gender;
+  }
 }

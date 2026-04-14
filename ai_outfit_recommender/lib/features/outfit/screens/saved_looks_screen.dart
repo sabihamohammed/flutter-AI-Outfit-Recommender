@@ -2,8 +2,25 @@ import 'package:flutter/material.dart';
 import '../services/saved_outfits_service.dart';
 import '../models/outfit_model.dart';
 
-class SavedLooksScreen extends StatelessWidget {
+class SavedLooksScreen extends StatefulWidget {
   const SavedLooksScreen({super.key});
+
+  @override
+  State<SavedLooksScreen> createState() => _SavedLooksScreenState();
+}
+
+class _SavedLooksScreenState extends State<SavedLooksScreen> {
+  void _removeSavedLook(int index) async {
+    await SavedOutfitsService.deleteOutfitAt(index);
+    setState(() {});
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Saved look deleted'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -63,7 +80,7 @@ class SavedLooksScreen extends StatelessWidget {
                             height: 240,
                             width: double.infinity,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Image.network(
+                            errorBuilder: (_, _, _) => Image.network(
                               "https://picsum.photos/seed/fashion/600/400",
                               height: 240,
                               width: double.infinity,
@@ -76,13 +93,28 @@ class SavedLooksScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              outfit.title,
-                              style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.deepPurple,
-                              ),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    outfit.title,
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.deepPurple,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  onPressed: () => _removeSavedLook(index),
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    color: Colors.deepPurple,
+                                  ),
+                                  tooltip: 'Delete saved look',
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 10),
                             Text(

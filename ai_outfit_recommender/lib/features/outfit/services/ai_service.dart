@@ -202,4 +202,130 @@ Return ONLY this JSON:
     final data = jsonDecode(response.body);
     return data["data"][0]["url"];
   }
+
+  static Future<String> generateComboImage(
+    String prompt,
+    String gender,
+    String occasion,
+    String weather,
+  ) async {
+    final url = Uri.parse("https://api.openai.com/v1/images/generations");
+
+    final occasionStyle = occasion.toLowerCase() == "office"
+        ? "professional officewear, polished, modest, structured, business casual or formal office look"
+        : "occasion-appropriate styling";
+
+    final effectivePrompt = prompt.trim().isNotEmpty
+        ? "fashion image showing the exact colors in $prompt as a side-by-side palette and a $gender model wearing the combo in $weather weather for $occasion. Show the selected color palette clearly with swatches or color blocks alongside the outfit. $occasionStyle, clean studio background, modern fashion photography"
+        : "fashion image showing a $gender model wearing a stylish outfit for $occasionStyle in $weather weather, with color swatches and moodboard elements, clean studio background, modern fashion photography";
+
+    final response = await http.post(
+      url,
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer ${ApiKeys.openAIKey}",
+      },
+      body: jsonEncode({
+        "model": "dall-e-2",
+        "prompt": effectivePrompt,
+        "n": 1,
+        "size": "512x512",
+      }),
+    );
+
+    print("IMAGE STATUS: ${response.statusCode}");
+    print("IMAGE BODY: ${response.body}");
+
+    if (response.statusCode != 200) {
+      throw Exception("Failed to generate image: ${response.body}");
+    }
+
+    final data = jsonDecode(response.body);
+    return data["data"][0]["url"];
+  }
+
+  static Future<Map<String, dynamic>> getColorComboSuggestions({
+    required List<String> colors,
+    required String weather,
+    required String occasion,
+    required String gender,
+  }) async {
+    final url = Uri.parse("https://api.openai.com/v1/chat/completions");
+
+    final response = await http.post(
+      url,
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer ${ApiKeys.openAIKey}",
+      },
+      body: jsonEncode({
+        "model": "gpt-4o-mini",
+        "temperature": 0.9,
+        "messages": [
+          {
+            "role": "system",
+            "content":
+                "You are a professional fashion stylist. Return only valid JSON. No markdown. No backticks. No explanation.",
+          },
+          {
+            "role": "user",
+            "content":
+                """
+The user already owns these color families:
+${colors.join(", ")}
+
+Context:
+Weather: $weather
+Occasion: $occasion
+Gender: $gender
+
+Task:
+Suggest exactly 3 stylish color combinations using only or mostly these colors.
+Keep them realistic, wearable, and suitable for the selected context.
+Each combo must include an image_prompt that asks for the exact listed colors to be shown on a model wearing the combo and preferably also as swatches or a side-by-side palette.
+
+Return ONLY this JSON:
+{
+  "combos": [
+    {
+      "title": "short combo name",
+      "colors": "comma separated colors",
+      "why_it_works": "1 short explanation",
+      "style_tip": "1 short styling tip",
+      "image_prompt": "detailed prompt describing exact colors for a model wearing the combo, with palette swatches or side-by-side colors"
+    },
+    {
+      "title": "short combo name",
+      "colors": "comma separated colors",
+      "why_it_works": "1 short explanation",
+      "style_tip": "1 short styling tip",
+      "image_prompt": "detailed prompt describing exact colors for a model wearing the combo, with palette swatches or side-by-side colors"
+    },
+    {
+      "title": "short combo name",
+      "colors": "comma separated colors",
+      "why_it_works": "1 short explanation",
+      "style_tip": "1 short styling tip",
+      "image_prompt": "detailed prompt describing exact colors for a model wearing the combo, with palette swatches or side-by-side colors"
+    }
+  ]
+}
+""",
+          },
+        ],
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        "Failed to get color combo suggestions: ${response.body}",
+      );
+    }
+
+    final data = jsonDecode(response.body);
+    String content = data["choices"][0]["message"]["content"];
+    content = content.replaceAll("```json", "").replaceAll("```", "").trim();
+
+    return jsonDecode(content) as Map<String, dynamic>;
+  }
 }

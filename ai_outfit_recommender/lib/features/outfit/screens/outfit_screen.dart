@@ -4,6 +4,7 @@ import '../widgets/selection_button.dart';
 import '../models/outfit_model.dart';
 import '../services/saved_outfits_service.dart';
 import 'saved_looks_screen.dart';
+import '../../style_lab/screens/style_lab_screen.dart';
 
 class OutfitScreen extends StatefulWidget {
   const OutfitScreen({super.key});
@@ -213,7 +214,7 @@ class _OutfitScreenState extends State<OutfitScreen> {
                         child: Image.network(
                           imageUrl,
                           fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => Image.network(
+                          errorBuilder: (_, _, _) => Image.network(
                             "https://picsum.photos/seed/fashion/600/400",
                             fit: BoxFit.contain,
                           ),
@@ -236,7 +237,7 @@ class _OutfitScreenState extends State<OutfitScreen> {
                       child: const Center(child: CircularProgressIndicator()),
                     );
                   },
-                  errorBuilder: (_, __, ___) => Image.network(
+                  errorBuilder: (_, _, _) => Image.network(
                     "https://picsum.photos/seed/fashion/600/400",
                     height: 280,
                     width: double.infinity,
@@ -354,6 +355,23 @@ class _OutfitScreenState extends State<OutfitScreen> {
           style: TextStyle(color: Colors.black87),
         ),
         actions: [
+          Tooltip(
+            message: 'Style Lab',
+            child: IconButton(
+              icon: const Icon(
+                Icons.auto_awesome_mosaic,
+                color: Colors.black87,
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const StyleLabScreen(),
+                  ),
+                );
+              },
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.favorite_border, color: Colors.black87),
             onPressed: () {

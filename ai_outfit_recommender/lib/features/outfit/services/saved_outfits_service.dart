@@ -36,8 +36,23 @@ class SavedOutfitsService {
   }
 
   // 🔥 Add new outfit
-  static Future<void> saveOutfit(OutfitModel outfit) async {
+  static bool containsOutfit(OutfitModel outfit) {
+    return _savedOutfits.any((saved) => saved.isSameLook(outfit));
+  }
+
+  static Future<bool> saveOutfit(OutfitModel outfit) async {
+    if (containsOutfit(outfit)) {
+      return false;
+    }
+
     _savedOutfits.add(outfit);
+    await _saveToStorage();
+    return true;
+  }
+
+  static Future<void> deleteOutfitAt(int index) async {
+    if (index < 0 || index >= _savedOutfits.length) return;
+    _savedOutfits.removeAt(index);
     await _saveToStorage();
   }
 }
